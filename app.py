@@ -25,7 +25,6 @@ if uploaded_file:
     # Normalizar nomes de colunas
     # -------------------------------
     df.columns = df.columns.str.strip().str.lower().str.replace("\n","").str.replace(" ","_")
-
     col_map = {
         "marca": "marca",
         "unidade": "unidade",
@@ -42,18 +41,15 @@ if uploaded_file:
     # -------------------------------
     # Conversão de colunas
     # -------------------------------
-    # Financeiro
     for col in ["valor_do_item","repasse_valor_escola"]:
         if col in df.columns:
             df[col] = df[col].astype(str).str.replace("R$", "", regex=False).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # Percentual → transformar corretamente, incluindo valores com vírgula
     if "repasse_perc_escola" in df.columns:
         df["repasse_perc_escola"] = df["repasse_perc_escola"].astype(str).str.replace(",", ".").replace("n/A", "0")
         df["repasse_perc_escola"] = pd.to_numeric(df["repasse_perc_escola"], errors="coerce").fillna(0)
 
-    # Alunos: n/A → 0, valores inteiros
     for col in ["aluno_interno","aluno_externo"]:
         if col in df.columns:
             df[col] = df[col].replace("n/A", 0)
@@ -80,7 +76,7 @@ if uploaded_file:
     if "repasse_valor_escola" in df_filtrado.columns:
         agg_dict["repasse_valor_escola"] = "sum"
     if "repasse_perc_escola" in df_filtrado.columns:
-        agg_dict["repasse_perc_escola"] = "mean"  # média percentual
+        agg_dict["repasse_perc_escola"] = "mean"
     if "aluno_interno" in df_filtrado.columns:
         agg_dict["aluno_interno"] = lambda x: (x==1).sum()
     if "aluno_externo" in df_filtrado.columns:
@@ -89,24 +85,7 @@ if uploaded_file:
     df_consolidado = df_filtrado.groupby(group_cols).agg(agg_dict).reset_index()
 
     # -------------------------------
-    # Linha Total
-    # -------------------------------
-    total_row = pd.DataFrame({
-        "marca": ["TOTAL"],
-        "unidade": [""],
-        "classificacao_receita": [""],
-        "nome_do_item": [""],
-        "valor_do_item": [df_consolidado["valor_do_item"].sum() if "valor_do_item" in df_consolidado else 0],
-        "repasse_valor_escola": [df_consolidado["repasse_valor_escola"].sum() if "repasse_valor_escola" in df_consolidado else 0],
-        "repasse_perc_escola": [df_consolidado["repasse_perc_escola"].mean() if "repasse_perc_escola" in df_consolidado else 0],
-        "aluno_interno": [df_consolidado["aluno_interno"].sum() if "aluno_interno" in df_consolidado else 0],
-        "aluno_externo": [df_consolidado["aluno_externo"].sum() if "aluno_externo" in df_consolidado else 0]
-    })
-
-    df_consolidado = pd.concat([df_consolidado, total_row], ignore_index=True)
-
-    # -------------------------------
-    # Big Cards (KPIs)
+    # Big Cards (KPIs) → excluindo TOTAL
     # -------------------------------
     st.header("KPIs")
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
@@ -117,10 +96,26 @@ if uploaded_file:
     kpi4.metric("Alunos Externos", f"{df_consolidado['aluno_externo'].sum():,}".replace(",", "."))
 
     # -------------------------------
+    # Linha Total para tabela → apenas exibição
+    # -------------------------------
+    total_row = pd.DataFrame({
+        "marca": ["TOTAL"],
+        "unidade": [""],
+        "classificacao_receita": [""],
+        "nome_do_item": [""],
+        "valor_do_item": [df_consolidado["valor_do_item"].sum()],
+        "repasse_valor_escola": [df_consolidado["repasse_valor_escola"].sum()],
+        "repasse_perc_escola": [df_consolidado["repasse_perc_escola"].mean()],
+        "aluno_interno": [df_consolidado["aluno_interno"].sum()],
+        "aluno_externo": [df_consolidado["aluno_externo"].sum()]
+    })
+
+    df_display = pd.concat([df_consolidado, total_row], ignore_index=True)
+
+    # -------------------------------
     # Tabela consolidada formatada
     # -------------------------------
     st.header("Tabela Consolidada")
-    df_display = df_consolidado.copy()
     for col in ["valor_do_item","repasse_valor_escola"]:
         if col in df_display.columns:
             df_display[col] = df_display[col].apply(lambda x: f"R$ {x:,.0f}".replace(",", "."))
@@ -130,34 +125,32 @@ if uploaded_file:
     st.dataframe(df_display, use_container_width=True)
 
     # -------------------------------
-    # Gráficos consolidados
+    # Gráficos consolidados → excluindo TOTAL
     # -------------------------------
-    st.header("Gráficos")
+    df_graf = df_consolidado.copy()
 
-    # Repasse $ Escola por Marca
-    if "marca" in df_consolidado.columns:
+    st.header("Gráficos")
+    if "marca" in df_graf.columns:
         fig_marca = px.bar(
-            df_consolidado.groupby("marca")["repasse_valor_escola"].sum().reset_index(),
+            df_graf.groupby("marca")["repasse_valor_escola"].sum().reset_index(),
             x="marca", y="repasse_valor_escola",
             title="Repasse $ Escola por Marca",
             text_auto=".2s"
         )
         st.plotly_chart(fig_marca, use_container_width=True)
 
-    # Repasse $ Escola por Unidade
-    if "unidade" in df_consolidado.columns:
+    if "unidade" in df_graf.columns:
         fig_unidade = px.bar(
-            df_consolidado.groupby("unidade")["repasse_valor_escola"].sum().reset_index(),
+            df_graf.groupby("unidade")["repasse_valor_escola"].sum().reset_index(),
             x="unidade", y="repasse_valor_escola",
             title="Repasse $ Escola por Unidade",
             text_auto=".2s"
         )
         st.plotly_chart(fig_unidade, use_container_width=True)
 
-    # Repasse $ Escola por Classificação Receita
-    if "classificacao_receita" in df_consolidado.columns:
+    if "classificacao_receita" in df_graf.columns:
         fig_class = px.bar(
-            df_consolidado.groupby("classificacao_receita")["repasse_valor_escola"].sum().reset_index(),
+            df_graf.groupby("classificacao_receita")["repasse_valor_escola"].sum().reset_index(),
             x="classificacao_receita", y="repasse_valor_escola",
             title="Repasse $ Escola por Classificação Receita",
             text_auto=".2s"
