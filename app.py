@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 
 # -------------------------------
-# Título do Dashboard
+# Configuração da página
 # -------------------------------
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("Dashboard Financeiro de Vendas e Repasses")
@@ -14,11 +14,12 @@ st.title("Dashboard Financeiro de Vendas e Repasses")
 st.sidebar.header("Upload do arquivo CSV")
 uploaded_file = st.sidebar.file_uploader("Escolha o CSV", type="csv")
 
-uploaded_file = st.sidebar.file_uploader("Escolha o CSV", type="csv")
-
 if uploaded_file:
-    # Ler CSV (ajuste separador se necessário)
-    df = pd.read_csv(uploaded_file)  # ou sep=";" se o CSV vier do Excel
+    # Ajuste separador caso o CSV venha do Excel
+    try:
+        df = pd.read_csv(uploaded_file)
+    except:
+        df = pd.read_csv(uploaded_file, sep=";")
 
     # -------------------------------
     # Converter colunas numéricas
@@ -29,12 +30,11 @@ if uploaded_file:
         df[col] = (
             df[col]
             .astype(str)
-            .str.replace("R$", "", regex=False)   # remove R$
-            .str.replace(".", "", regex=False)    # remove pontos como milhar
-            .str.replace(",", ".", regex=False)   # converte vírgula em ponto decimal
+            .str.replace("R$", "", regex=False)    # remove símbolo de moeda
+            .str.replace(".", "", regex=False)     # remove ponto de milhar
+            .str.replace(",", ".", regex=False)    # transforma vírgula em ponto decimal
         )
         df[col] = pd.to_numeric(df[col], errors="coerce")  # valores inválidos viram NaN
-
 
     # -------------------------------
     # Filtros laterais
@@ -87,6 +87,20 @@ if uploaded_file:
         df_filtrado.groupby("Unidade")["Valor do Item"].sum().reset_index(),
         x="Unidade",
         y="Valor do Item",
-        title="Soma do Valor do Item por Unidade", 
+        title="Soma do Valor do Item por Unidade",
         text_auto=".2s"
     )
+    st.plotly_chart(fig1, use_container_width=True)
+
+    # Gráfico 2: Repasse $ Escola por Classificação Receita
+    fig2 = px.bar(
+        df_filtrado.groupby("Classificação Receita")["Repasse $ Escola"].sum().reset_index(),
+        x="Classificação Receita",
+        y="Repasse $ Escola",
+        title="Soma do Repasse $ Escola por Classificação Receita",
+        text_auto=".2s"
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+
+else:
+    st.info("Por favor, faça upload do arquivo CSV para visualizar o dashboard.")
