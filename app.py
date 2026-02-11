@@ -48,9 +48,10 @@ if uploaded_file:
             df[col] = df[col].astype(str).str.replace("R$", "", regex=False).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # Percentual
+    # Percentual → transformar corretamente, incluindo valores com vírgula
     if "repasse_perc_escola" in df.columns:
-        df["repasse_perc_escola"] = pd.to_numeric(df["repasse_perc_escola"], errors="coerce")
+        df["repasse_perc_escola"] = df["repasse_perc_escola"].astype(str).str.replace(",", ".").replace("n/A", "0")
+        df["repasse_perc_escola"] = pd.to_numeric(df["repasse_perc_escola"], errors="coerce").fillna(0)
 
     # Alunos: n/A → 0, valores inteiros
     for col in ["aluno_interno","aluno_externo"]:
@@ -59,7 +60,7 @@ if uploaded_file:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
 
     # -------------------------------
-    # Filtros
+    # Filtros suspensos tipo segmentação
     # -------------------------------
     st.sidebar.header("Filtros")
     marcas = st.sidebar.multiselect("Marca", options=df["marca"].dropna().unique(), default=df["marca"].dropna().unique())
@@ -88,6 +89,23 @@ if uploaded_file:
     df_consolidado = df_filtrado.groupby(group_cols).agg(agg_dict).reset_index()
 
     # -------------------------------
+    # Linha Total
+    # -------------------------------
+    total_row = pd.DataFrame({
+        "marca": ["TOTAL"],
+        "unidade": [""],
+        "classificacao_receita": [""],
+        "nome_do_item": [""],
+        "valor_do_item": [df_consolidado["valor_do_item"].sum() if "valor_do_item" in df_consolidado else 0],
+        "repasse_valor_escola": [df_consolidado["repasse_valor_escola"].sum() if "repasse_valor_escola" in df_consolidado else 0],
+        "repasse_perc_escola": [df_consolidado["repasse_perc_escola"].mean() if "repasse_perc_escola" in df_consolidado else 0],
+        "aluno_interno": [df_consolidado["aluno_interno"].sum() if "aluno_interno" in df_consolidado else 0],
+        "aluno_externo": [df_consolidado["aluno_externo"].sum() if "aluno_externo" in df_consolidado else 0]
+    })
+
+    df_consolidado = pd.concat([df_consolidado, total_row], ignore_index=True)
+
+    # -------------------------------
     # Big Cards (KPIs)
     # -------------------------------
     st.header("KPIs")
@@ -99,17 +117,15 @@ if uploaded_file:
     kpi4.metric("Alunos Externos", f"{df_consolidado['aluno_externo'].sum():,}".replace(",", "."))
 
     # -------------------------------
-    # Tabela detalhada consolidada
+    # Tabela consolidada formatada
     # -------------------------------
     st.header("Tabela Consolidada")
     df_display = df_consolidado.copy()
-
-    # Formatação
     for col in ["valor_do_item","repasse_valor_escola"]:
         if col in df_display.columns:
             df_display[col] = df_display[col].apply(lambda x: f"R$ {x:,.0f}".replace(",", "."))
     if "repasse_perc_escola" in df_display.columns:
-        df_display["repasse_perc_escola"] = df_display["repasse_perc_escola"].apply(lambda x: f"{x:.1f}%" if pd.notnull(x) else "0.0%")
+        df_display["repasse_perc_escola"] = df_display["repasse_perc_escola"].apply(lambda x: f"{x:.1f}%")
 
     st.dataframe(df_display, use_container_width=True)
 
