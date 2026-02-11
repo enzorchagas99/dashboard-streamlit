@@ -71,6 +71,6 @@ if uploaded_file:
         df_filtrado.groupby("Unidade")["Valor do Item"].sum().reset_index(),
         x="Unidade",
         y="Valor do Item",
-        title="Soma do Valor do Item por Unidade!, 
+        title="Soma do Valor do Item por Unidade", 
         text_auto=".2s"
     )
