@@ -14,11 +14,27 @@ st.title("Dashboard Financeiro de Vendas e Repasses")
 st.sidebar.header("Upload do arquivo CSV")
 uploaded_file = st.sidebar.file_uploader("Escolha o CSV", type="csv")
 
+uploaded_file = st.sidebar.file_uploader("Escolha o CSV", type="csv")
+
 if uploaded_file:
+    # Ler CSV (ajuste separador se necessário)
+    df = pd.read_csv(uploaded_file)  # ou sep=";" se o CSV vier do Excel
+
     # -------------------------------
-    # Leitura do CSV
+    # Converter colunas numéricas
     # -------------------------------
-    df = pd.read_csv(uploaded_file)
+    colunas_numericas = ["Valor do Item", "Repasse $ Escola", "Alunos internos", "Alunos externos"]
+
+    for col in colunas_numericas:
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.replace("R$", "", regex=False)   # remove R$
+            .str.replace(".", "", regex=False)    # remove pontos como milhar
+            .str.replace(",", ".", regex=False)   # converte vírgula em ponto decimal
+        )
+        df[col] = pd.to_numeric(df[col], errors="coerce")  # valores inválidos viram NaN
+
 
     # -------------------------------
     # Filtros laterais
