@@ -98,64 +98,40 @@ if uploaded_file:
     # -------------------------------
     # Linha Total para tabela → apenas exibição
     # -------------------------------
-    total_row = pd.DataFrame({
-        "marca": ["TOTAL"],
-        "unidade": [""],
-        "classificacao_receita": [""],
-        "nome_do_item": [""],
-        "valor_do_item": [df_consolidado["valor_do_item"].sum()],
-        "repasse_valor_escola": [df_consolidado["repasse_valor_escola"].sum()],
-        "repasse_perc_escola": [df_consolidado["repasse_perc_escola"].mean()],
-        "aluno_interno": [df_consolidado["aluno_interno"].sum()],
-        "aluno_externo": [df_consolidado["aluno_externo"].sum()]
-    })
-
-    df_display = pd.concat([df_consolidado, total_row], ignore_index=True)
+    total_values = {
+        "marca": "TOTAL",
+        "unidade": "",
+        "classificacao_receita": "",
+        "nome_do_item": "",
+        "valor_do_item": df_consolidado["valor_do_item"].sum(),
+        "repasse_valor_escola": df_consolidado["repasse_valor_escola"].sum(),
+        "repasse_perc_escola": df_consolidado["repasse_perc_escola"].mean(),
+        "aluno_interno": df_consolidado["aluno_interno"].sum(),
+        "aluno_externo": df_consolidado["aluno_externo"].sum()
+    }
+    df_total = pd.DataFrame([total_values])
+    df_display = pd.concat([df_consolidado, df_total], ignore_index=True)
 
     # -------------------------------
-    # Tabela consolidada formatada
+    # Formatação
     # -------------------------------
-    st.header("Tabela Consolidada")
     for col in ["valor_do_item","repasse_valor_escola"]:
-        if col in df_display.columns:
-            df_display[col] = df_display[col].apply(lambda x: f"R$ {x:,.0f}".replace(",", "."))
-    if "repasse_perc_escola" in df_display.columns:
-        df_display["repasse_perc_escola"] = df_display["repasse_perc_escola"].apply(lambda x: f"{x:.1f}%")
+        df_display[col] = df_display[col].apply(lambda x: f"R$ {x:,.0f}".replace(",", "."))
+    df_display["repasse_perc_escola"] = df_display["repasse_perc_escola"].apply(lambda x: f"{x:.1f}%")
 
-    st.dataframe(df_display, use_container_width=True)
+    # Estilo: TOTAL em negrito e fundo cinza
+    def highlight_total(row):
+        if row["marca"] == "TOTAL":
+            return ['font-weight: bold; background-color: #d3d3d3']*len(row)
+        else:
+            return ['']*len(row)
+
+    st.header("Tabela Consolidada")
+    st.dataframe(df_display.style.apply(highlight_total, axis=1), use_container_width=True)
 
     # -------------------------------
-    # Gráficos consolidados → excluindo TOTAL
+    # Gráficos → excluindo TOTAL
     # -------------------------------
     df_graf = df_consolidado.copy()
 
-    st.header("Gráficos")
-    if "marca" in df_graf.columns:
-        fig_marca = px.bar(
-            df_graf.groupby("marca")["repasse_valor_escola"].sum().reset_index(),
-            x="marca", y="repasse_valor_escola",
-            title="Repasse $ Escola por Marca",
-            text_auto=".2s"
-        )
-        st.plotly_chart(fig_marca, use_container_width=True)
-
-    if "unidade" in df_graf.columns:
-        fig_unidade = px.bar(
-            df_graf.groupby("unidade")["repasse_valor_escola"].sum().reset_index(),
-            x="unidade", y="repasse_valor_escola",
-            title="Repasse $ Escola por Unidade",
-            text_auto=".2s"
-        )
-        st.plotly_chart(fig_unidade, use_container_width=True)
-
-    if "classificacao_receita" in df_graf.columns:
-        fig_class = px.bar(
-            df_graf.groupby("classificacao_receita")["repasse_valor_escola"].sum().reset_index(),
-            x="classificacao_receita", y="repasse_valor_escola",
-            title="Repasse $ Escola por Classificação Receita",
-            text_auto=".2s"
-        )
-        st.plotly_chart(fig_class, use_container_width=True)
-
-else:
-    st.info("Por favor, faça upload do arquivo CSV para visualizar o dashboard.")
+    st.header("
