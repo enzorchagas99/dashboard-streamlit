@@ -15,16 +15,22 @@ st.sidebar.header("Upload do arquivo CSV")
 uploaded_file = st.sidebar.file_uploader("Escolha o CSV", type="csv")
 
 if uploaded_file:
-    # Ajuste separador caso o CSV venha do Excel
+    # Ler CSV (tenta separador padrão, senão sep=";")
     try:
         df = pd.read_csv(uploaded_file)
     except:
         df = pd.read_csv(uploaded_file, sep=";")
 
     # -------------------------------
-    # Converter colunas numéricas
+    # Normalizar nomes de colunas
     # -------------------------------
-    colunas_numericas = ["Valor do Item", "Repasse $ Escola", "Alunos internos", "Alunos externos"]
+    df.columns = df.columns.str.strip()          # remove espaços extras
+    df.columns = df.columns.str.replace("\n", "") # remove quebras de linha
+
+    # -------------------------------
+    # Conversão de colunas numéricas
+    # -------------------------------
+    colunas_numericas = ["Valor do Item", "Repasse $ Escola", "Aluno Interno", "Aluno Externo"]
 
     for col in colunas_numericas:
         df[col] = (
@@ -32,7 +38,7 @@ if uploaded_file:
             .astype(str)
             .str.replace("R$", "", regex=False)    # remove símbolo de moeda
             .str.replace(".", "", regex=False)     # remove ponto de milhar
-            .str.replace(",", ".", regex=False)    # transforma vírgula em ponto decimal
+            .str.replace(",", ".", regex=False)    # vírgula -> ponto decimal
         )
         df[col] = pd.to_numeric(df[col], errors="coerce")  # valores inválidos viram NaN
 
@@ -43,15 +49,15 @@ if uploaded_file:
     marcas = st.sidebar.multiselect("Marca", options=df["Marca"].unique(), default=df["Marca"].unique())
     unidades = st.sidebar.multiselect("Unidade", options=df["Unidade"].unique(), default=df["Unidade"].unique())
     classificacoes = st.sidebar.multiselect(
-        "Classificação Receita",
-        options=df["Classificação Receita"].unique(),
-        default=df["Classificação Receita"].unique()
+        "Classificação receita",
+        options=df["Classificação receita"].unique(),
+        default=df["Classificação receita"].unique()
     )
 
     df_filtrado = df[
         (df["Marca"].isin(marcas)) &
         (df["Unidade"].isin(unidades)) &
-        (df["Classificação Receita"].isin(classificacoes))
+        (df["Classificação receita"].isin(classificacoes))
     ]
 
     # -------------------------------
@@ -62,8 +68,8 @@ if uploaded_file:
 
     kpi1.metric("Soma Valor do Item", f"R$ {df_filtrado['Valor do Item'].sum():,.2f}")
     kpi2.metric("Soma Repasse $ Escola", f"R$ {df_filtrado['Repasse $ Escola'].sum():,.2f}")
-    kpi3.metric("Soma Alunos Internos", f"{int(df_filtrado['Alunos internos'].sum())}")
-    kpi4.metric("Soma Alunos Externos", f"{int(df_filtrado['Alunos externos'].sum())}")
+    kpi3.metric("Soma Alunos Internos", f"{int(df_filtrado['Aluno Interno'].sum())}")
+    kpi4.metric("Soma Alunos Externos", f"{int(df_filtrado['Aluno Externo'].sum())}")
 
     # -------------------------------
     # Tabela detalhada
@@ -71,9 +77,9 @@ if uploaded_file:
     st.header("Tabela Detalhada")
     st.dataframe(
         df_filtrado[[
-            "Marca", "Unidade", "Classificação Receita", "Nome do Item",
+            "Marca", "Unidade", "Classificação receita", "Nome do Item",
             "Valor do Item", "Repasse % Escola", "Repasse $ Escola",
-            "Alunos internos", "Alunos externos"
+            "Aluno Interno", "Aluno Externo"
         ]]
     )
 
@@ -92,12 +98,12 @@ if uploaded_file:
     )
     st.plotly_chart(fig1, use_container_width=True)
 
-    # Gráfico 2: Repasse $ Escola por Classificação Receita
+    # Gráfico 2: Repasse $ Escola por Classificação receita
     fig2 = px.bar(
-        df_filtrado.groupby("Classificação Receita")["Repasse $ Escola"].sum().reset_index(),
-        x="Classificação Receita",
+        df_filtrado.groupby("Classificação receita")["Repasse $ Escola"].sum().reset_index(),
+        x="Classificação receita",
         y="Repasse $ Escola",
-        title="Soma do Repasse $ Escola por Classificação Receita",
+        title="Soma do Repasse $ Escola por Classificação receita",
         text_auto=".2s"
     )
     st.plotly_chart(fig2, use_container_width=True)
