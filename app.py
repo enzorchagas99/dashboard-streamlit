@@ -15,7 +15,7 @@ st.sidebar.header("Upload do arquivo CSV")
 uploaded_file = st.sidebar.file_uploader("Escolha o CSV", type="csv")
 
 if uploaded_file:
-    # Tenta ler CSV com separador padrão ou ; (Excel)
+    # Ler CSV
     try:
         df = pd.read_csv(uploaded_file)
     except:
@@ -24,14 +24,8 @@ if uploaded_file:
     # -------------------------------
     # Normalizar nomes de colunas
     # -------------------------------
-    df.columns = df.columns.str.strip()              # remove espaços
-    df.columns = df.columns.str.lower()             # transforma tudo em minúscula
-    df.columns = df.columns.str.replace("\n", "")   # remove quebras de linha
-    df.columns = df.columns.str.replace(" ", "_")   # transforma espaços em underline
+    df.columns = df.columns.str.strip().str.lower().str.replace("\n","").str.replace(" ","_")
 
-    # -------------------------------
-    # Mapear nomes esperados
-    # -------------------------------
     col_map = {
         "marca": "marca",
         "unidade": "unidade",
@@ -43,45 +37,46 @@ if uploaded_file:
         "aluno_interno": "aluno_interno",
         "aluno_externo": "aluno_externo"
     }
-
-    # Renomear colunas do df para padronizar
-    df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+    df = df.rename(columns={k: v for k,v in col_map.items() if k in df.columns})
 
     # -------------------------------
     # Converter colunas numéricas
     # -------------------------------
-    num_cols = ["valor_do_item", "repasse_valor_escola", "aluno_interno", "aluno_externo"]
-    for col in num_cols:
+    # Financeiro
+    if "valor_do_item" in df.columns:
+        df["valor_do_item"] = df["valor_do_item"].astype(str).str.replace("R$", "", regex=False).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+        df["valor_do_item"] = pd.to_numeric(df["valor_do_item"], errors="coerce")
+
+    if "repasse_valor_escola" in df.columns:
+        df["repasse_valor_escola"] = df["repasse_valor_escola"].astype(str).str.replace("R$", "", regex=False).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+        df["repasse_valor_escola"] = pd.to_numeric(df["repasse_valor_escola"], errors="coerce")
+
+    # Porcentagem
+    if "repasse_perc_escola" in df.columns:
+        df["repasse_perc_escola"] = pd.to_numeric(df["repasse_perc_escola"], errors="coerce")
+
+    # Alunos: transformar n/A em 0
+    for col in ["aluno_interno", "aluno_externo"]:
         if col in df.columns:
-            df[col] = (
-                df[col]
-                .astype(str)
-                .str.replace("R$", "", regex=False)
-                .str.replace(".", "", regex=False)
-                .str.replace(",", ".", regex=False)
-            )
+            df[col] = df[col].replace("n/A", 0)
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # -------------------------------
-    # Filtros laterais
+    # Filtros laterais (listas suspensas sem valores vazios)
     # -------------------------------
     st.sidebar.header("Filtros")
     if "marca" in df.columns:
-        marcas = st.sidebar.multiselect("Marca", options=df["marca"].unique(), default=df["marca"].unique())
+        marcas = st.sidebar.multiselect("Marca", options=df["marca"].dropna().unique(), default=df["marca"].dropna().unique())
     else:
         marcas = []
 
     if "unidade" in df.columns:
-        unidades = st.sidebar.multiselect("Unidade", options=df["unidade"].unique(), default=df["unidade"].unique())
+        unidades = st.sidebar.multiselect("Unidade", options=df["unidade"].dropna().unique(), default=df["unidade"].dropna().unique())
     else:
         unidades = []
 
     if "classificacao_receita" in df.columns:
-        classificacoes = st.sidebar.multiselect(
-            "Classificação Receita",
-            options=df["classificacao_receita"].unique(),
-            default=df["classificacao_receita"].unique()
-        )
+        classificacoes = st.sidebar.multiselect("Classificação Receita", options=df["classificacao_receita"].dropna().unique(), default=df["classificacao_receita"].dropna().unique())
     else:
         classificacoes = []
 
@@ -97,10 +92,10 @@ if uploaded_file:
     st.header("KPIs")
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
-    kpi1.metric("Soma Valor do Item", f"R$ {df_filtrado['valor_do_item'].sum():,.2f}" if 'valor_do_item' in df_filtrado else "0")
-    kpi2.metric("Soma Repasse $ Escola", f"R$ {df_filtrado['repasse_valor_escola'].sum():,.2f}" if 'repasse_valor_escola' in df_filtrado else "0")
-    kpi3.metric("Soma Alunos Internos", f"{int(df_filtrado['aluno_interno'].sum())}" if 'aluno_interno' in df_filtrado else "0")
-    kpi4.metric("Soma Alunos Externos", f"{int(df_filtrado['aluno_externo'].sum())}" if 'aluno_externo' in df_filtrado else "0")
+    kpi1.metric("Soma Valor do Item", f"R$ {df_filtrado['valor_do_item'].sum():,.0f}".replace(",", ".") if "valor_do_item" in df_filtrado else "0")
+    kpi2.metric("Soma Repasse $ Escola", f"R$ {df_filtrado['repasse_valor_escola'].sum():,.0f}".replace(",", ".") if "repasse_valor_escola" in df_filtrado else "0")
+    kpi3.metric("Soma Alunos Internos", f"{df_filtrado['aluno_interno'][df_filtrado['aluno_interno']==1].sum()}" if "aluno_interno" in df_filtrado else "0")
+    kpi4.metric("Soma Alunos Externos", f"{df_filtrado['aluno_externo'][df_filtrado['aluno_externo']==1].sum()}" if "aluno_externo" in df_filtrado else "0")
 
     # -------------------------------
     # Tabela detalhada
@@ -112,34 +107,45 @@ if uploaded_file:
         "aluno_interno", "aluno_externo"
     ] if c in df_filtrado.columns]
 
-    st.dataframe(df_filtrado[display_cols])
+    # Substituir NaN por 0 nas colunas de aluno
+    df_filtrado[["aluno_interno", "aluno_externo"]] = df_filtrado[["aluno_interno", "aluno_externo"]].fillna(0)
+
+    st.dataframe(df_filtrado[display_cols].reset_index(drop=True), use_container_width=True)
+
+    # Formatar números financeiros e percentuais na tabela
+    for col in ["valor_do_item", "repasse_valor_escola"]:
+        if col in df_filtrado.columns:
+            df_filtrado[col] = df_filtrado[col].apply(lambda x: f"R$ {x:,.0f}".replace(",", "."))
+
+    if "repasse_perc_escola" in df_filtrado.columns:
+        df_filtrado["repasse_perc_escola"] = df_filtrado["repasse_perc_escola"].apply(lambda x: f"{x:.1f}%")
 
     # -------------------------------
     # Gráficos interativos
     # -------------------------------
     st.header("Gráficos")
 
-    # Gráfico 1: Valor do Item por Unidade
+    # Gráfico 1: Valor do Item por Marca
+    if "marca" in df_filtrado.columns and "valor_do_item" in df_filtrado.columns:
+        fig_marca = px.bar(
+            df_filtrado.groupby("marca")["valor_do_item"].sum().reset_index(),
+            x="marca",
+            y="valor_do_item",
+            title="Soma do Valor do Item por Marca",
+            text_auto=".2s"
+        )
+        st.plotly_chart(fig_marca, use_container_width=True)
+
+    # Gráfico 2: Valor do Item por Unidade
     if "unidade" in df_filtrado.columns and "valor_do_item" in df_filtrado.columns:
-        fig1 = px.bar(
+        fig_unidade = px.bar(
             df_filtrado.groupby("unidade")["valor_do_item"].sum().reset_index(),
             x="unidade",
             y="valor_do_item",
             title="Soma do Valor do Item por Unidade",
             text_auto=".2s"
         )
-        st.plotly_chart(fig1, use_container_width=True)
-
-    # Gráfico 2: Repasse $ Escola por Classificação Receita
-    if "classificacao_receita" in df_filtrado.columns and "repasse_valor_escola" in df_filtrado.columns:
-        fig2 = px.bar(
-            df_filtrado.groupby("classificacao_receita")["repasse_valor_escola"].sum().reset_index(),
-            x="classificacao_receita",
-            y="repasse_valor_escola",
-            title="Soma do Repasse $ Escola por Classificação Receita",
-            text_auto=".2s"
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig_unidade, use_container_width=True)
 
 else:
     st.info("Por favor, faça upload do arquivo CSV para visualizar o dashboard.")
