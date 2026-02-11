@@ -1,33 +1,161 @@
-# Copia o df_consolidado real (sem TOTAL na base)
-df_display = df_consolidado.copy()
+import streamlit as st
+import pandas as pd
+import plotly.express as px
 
-# Cria linha de TOTAL para estilo
-total_values = {
-    "marca": "TOTAL",
-    "unidade": "",
-    "classificacao_receita": "",
-    "nome_do_item": "",
-    "valor_do_item": df_display["valor_do_item"].sum(),
-    "repasse_valor_escola": df_display["repasse_valor_escola"].sum(),
-    "repasse_perc_escola": df_display["repasse_perc_escola"].mean(),
-    "aluno_interno": df_display["aluno_interno"].sum(),
-    "aluno_externo": df_display["aluno_externo"].sum()
-}
-df_total = pd.DataFrame([total_values])
+# -------------------------------
+# Configuração da página
+# -------------------------------
+st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
+st.title("Dashboard Financeiro de Vendas e Repasses")
 
-# Concatena só para visual, mas vamos estilizar
-df_display_total = pd.concat([df_display, df_total], ignore_index=True)
+# -------------------------------
+# Upload do CSV
+# -------------------------------
+st.sidebar.header("Upload do arquivo CSV")
+uploaded_file = st.sidebar.file_uploader("Escolha o CSV", type="csv")
 
-# Formatação financeira e percentual
-for col in ["valor_do_item","repasse_valor_escola"]:
-    df_display_total[col] = df_display_total[col].apply(lambda x: f"R$ {x:,.0f}".replace(",", "."))
-df_display_total["repasse_perc_escola"] = df_display_total["repasse_perc_escola"].apply(lambda x: f"{x:.1f}%")
+if uploaded_file:
+    # Ler CSV
+    try:
+        df = pd.read_csv(uploaded_file)
+    except:
+        df = pd.read_csv(uploaded_file, sep=";")
 
-# Estilo: deixar linha TOTAL em negrito e fundo cinza
-def highlight_total(row):
-    if row["marca"] == "TOTAL":
-        return ['font-weight: bold; background-color: #d3d3d3']*len(row)
-    else:
-        return ['']*len(row)
+    # -------------------------------
+    # Normalizar nomes de colunas
+    # -------------------------------
+    df.columns = df.columns.str.strip().str.lower().str.replace("\n","").str.replace(" ","_")
+    col_map = {
+        "marca": "marca",
+        "unidade": "unidade",
+        "classificação_receita": "classificacao_receita",
+        "nome_do_item": "nome_do_item",
+        "valor_do_item": "valor_do_item",
+        "repasse_%_escola": "repasse_perc_escola",
+        "repasse_$_escola": "repasse_valor_escola",
+        "aluno_interno": "aluno_interno",
+        "aluno_externo": "aluno_externo"
+    }
+    df = df.rename(columns={k: v for k,v in col_map.items() if k in df.columns})
 
-st.dataframe(df_display_total.style.apply(highlight_total, axis=1), use_container_width=True)
+    # -------------------------------
+    # Conversão de colunas
+    # -------------------------------
+    for col in ["valor_do_item","repasse_valor_escola"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.replace("R$", "", regex=False).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    if "repasse_perc_escola" in df.columns:
+        df["repasse_perc_escola"] = df["repasse_perc_escola"].astype(str).str.replace(",", ".").replace("n/A", "0")
+        df["repasse_perc_escola"] = pd.to_numeric(df["repasse_perc_escola"], errors="coerce").fillna(0)
+
+    for col in ["aluno_interno","aluno_externo"]:
+        if col in df.columns:
+            df[col] = df[col].replace("n/A", 0)
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
+    # -------------------------------
+    # Filtros suspensos tipo segmentação
+    # -------------------------------
+    st.sidebar.header("Filtros")
+    marcas = st.sidebar.multiselect("Marca", options=df["marca"].dropna().unique(), default=df["marca"].dropna().unique())
+    unidades = st.sidebar.multiselect("Unidade", options=df["unidade"].dropna().unique(), default=df["unidade"].dropna().unique())
+    classificacoes = st.sidebar.multiselect("Classificação Receita", options=df["classificacao_receita"].dropna().unique(), default=df["classificacao_receita"].dropna().unique())
+
+    df_filtrado = df[df["marca"].isin(marcas) & df["unidade"].isin(unidades) & df["classificacao_receita"].isin(classificacoes)]
+
+    # -------------------------------
+    # Consolidação da tabela
+    # -------------------------------
+    group_cols = ["marca","unidade","classificacao_receita","nome_do_item"]
+
+    agg_dict = {}
+    if "valor_do_item" in df_filtrado.columns:
+        agg_dict["valor_do_item"] = "sum"
+    if "repasse_valor_escola" in df_filtrado.columns:
+        agg_dict["repasse_valor_escola"] = "sum"
+    if "repasse_perc_escola" in df_filtrado.columns:
+        agg_dict["repasse_perc_escola"] = "mean"
+    if "aluno_interno" in df_filtrado.columns:
+        agg_dict["aluno_interno"] = lambda x: (x==1).sum()
+    if "aluno_externo" in df_filtrado.columns:
+        agg_dict["aluno_externo"] = lambda x: (x==1).sum()
+
+    df_consolidado = df_filtrado.groupby(group_cols).agg(agg_dict).reset_index()
+
+    # -------------------------------
+    # Big Cards (KPIs) → excluindo TOTAL
+    # -------------------------------
+    st.header("KPIs")
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+
+    kpi1.metric("Soma Valor do Item", f"R$ {df_consolidado['valor_do_item'].sum():,.0f}".replace(",", "."))
+    kpi2.metric("Soma Repasse $ Escola", f"R$ {df_consolidado['repasse_valor_escola'].sum():,.0f}".replace(",", "."))
+    kpi3.metric("Alunos Internos", f"{df_consolidado['aluno_interno'].sum():,}".replace(",", "."))
+    kpi4.metric("Alunos Externos", f"{df_consolidado['aluno_externo'].sum():,}".replace(",", "."))
+
+    # -------------------------------
+    # Linha Total para tabela → apenas exibição
+    # -------------------------------
+    total_row = pd.DataFrame({
+        "marca": ["TOTAL"],
+        "unidade": [""],
+        "classificacao_receita": [""],
+        "nome_do_item": [""],
+        "valor_do_item": [df_consolidado["valor_do_item"].sum()],
+        "repasse_valor_escola": [df_consolidado["repasse_valor_escola"].sum()],
+        "repasse_perc_escola": [df_consolidado["repasse_perc_escola"].mean()],
+        "aluno_interno": [df_consolidado["aluno_interno"].sum()],
+        "aluno_externo": [df_consolidado["aluno_externo"].sum()]
+    })
+
+    df_display = pd.concat([df_consolidado, total_row], ignore_index=True)
+
+    # -------------------------------
+    # Tabela consolidada formatada
+    # -------------------------------
+    st.header("Tabela Consolidada")
+    for col in ["valor_do_item","repasse_valor_escola"]:
+        if col in df_display.columns:
+            df_display[col] = df_display[col].apply(lambda x: f"R$ {x:,.0f}".replace(",", "."))
+    if "repasse_perc_escola" in df_display.columns:
+        df_display["repasse_perc_escola"] = df_display["repasse_perc_escola"].apply(lambda x: f"{x:.1f}%")
+
+    st.dataframe(df_display, use_container_width=True)
+
+    # -------------------------------
+    # Gráficos consolidados → excluindo TOTAL
+    # -------------------------------
+    df_graf = df_consolidado.copy()
+
+    st.header("Gráficos")
+    if "marca" in df_graf.columns:
+        fig_marca = px.bar(
+            df_graf.groupby("marca")["repasse_valor_escola"].sum().reset_index(),
+            x="marca", y="repasse_valor_escola",
+            title="Repasse $ Escola por Marca",
+            text_auto=".2s"
+        )
+        st.plotly_chart(fig_marca, use_container_width=True)
+
+    if "unidade" in df_graf.columns:
+        fig_unidade = px.bar(
+            df_graf.groupby("unidade")["repasse_valor_escola"].sum().reset_index(),
+            x="unidade", y="repasse_valor_escola",
+            title="Repasse $ Escola por Unidade",
+            text_auto=".2s"
+        )
+        st.plotly_chart(fig_unidade, use_container_width=True)
+
+    if "classificacao_receita" in df_graf.columns:
+        fig_class = px.bar(
+            df_graf.groupby("classificacao_receita")["repasse_valor_escola"].sum().reset_index(),
+            x="classificacao_receita", y="repasse_valor_escola",
+            title="Repasse $ Escola por Classificação Receita",
+            text_auto=".2s"
+        )
+        st.plotly_chart(fig_class, use_container_width=True)
+
+else:
+    st.info("Por favor, faça upload do arquivo CSV para visualizar o dashboard.")
